@@ -25,7 +25,7 @@ Once the module is installed, follow these steps to anonymize your medical data:
 
 1. Open 3D Slicer.
 2. Navigate to the `Medical Data Anonymizer` module from the module dropdown.
-3. In the `Files to be Anonymized` section, select the directory containing the text files you want to anonymize.
+3. In the `Files to be Anonymized` section, select the directory containing the text files you want to anonymize. EXTENSIONS ACCEPTED: .DOCX
 4. In the `Output Anonymized Files` section, choose the directory where you want to save the anonymized files.
 5. Click the `Install Dependencies` button to ensure all necessary packages are installed.
 6. After dependencies are installed, click the `Anonymize` button to start the anonymization process.
