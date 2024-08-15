@@ -5,12 +5,12 @@ project(MedicalDataAnonymizer)
 #-----------------------------------------------------------------------------
 # Extension meta-information
 set(EXTENSION_HOMEPAGE "https://github.com/bianchijonas1/Medical_Data_Anonymizer")
-set(EXTENSION_CATEGORY "SlicerCMF")
+set(EXTENSION_CATEGORY "SlicerCMF")  # Set the category to SlicerCMF
 set(EXTENSION_CONTRIBUTORS "Jonas Bianchi - (UNIVERSITY OF THE PACIFIC), Lucia Cevidanes (University of Michigan)")
 set(EXTENSION_DESCRIPTION "This extension anonymizes medical data in text files by removing personal identifiers while retaining critical clinical information.")
 set(EXTENSION_ICONURL "https://raw.githubusercontent.com/bianchijonas1/Medical_Data_Anonymizer/main/icon.png")
 set(EXTENSION_SCREENSHOTURLS "https://raw.githubusercontent.com/bianchijonas1/Medical_Data_Anonymizer/main/screenshot.png")
-set(EXTENSION_DEPENDS "NA") # Specified as a list or "NA" if no dependencies
+set(EXTENSION_DEPENDS "NA")  # Specified as a list or "NA" if no dependencies
 
 #-----------------------------------------------------------------------------
 # Extension dependencies
