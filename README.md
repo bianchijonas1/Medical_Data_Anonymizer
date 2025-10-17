@@ -39,7 +39,7 @@ Once the module is installed, follow these steps to anonymize your medical data:
 7. The anonymized files and a CSV file mapping the original filenames to the anonymized filenames will be saved in the output directory.
 
 ## Contributors
-- **Jonas Bianchi** - Developer and Maintainer
+- Jonas Bianchi,  DCBIA Lab Umich and UNC - Lucia Cevidanes  - Developer and Maintainer
 
 ## License
 This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE.txt) file for details.
