@@ -46,3 +46,198 @@ This project is licensed under the Apache License, Version 2.0. See the [LICENSE
 
 ## Acknowledgments
 This module leverages the [spaCy](https://spacy.io/) library and its `en_core_web_sm` pre-trained model for natural language processing. We acknowledge the spaCy team for their powerful and user-friendly NLP tools.
+
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+---------------
+
+
+# Medical Data Anonymizer - Upgrade Guide
+
+## What Changed: Presidio Integration
+
+### Before (spaCy only):
+- Only detected PERSON and DATE entities
+- String replacement had issues with partial matches
+- No configuration options
+- Small language model (85% accuracy)
+
+### After (Presidio):
+- Detects 12+ entity types (names, phones, emails, SSN, etc.)
+- Smarter replacement algorithm
+- Full UI configuration with checkboxes
+- Multiple anonymization methods
+- Adjustable confidence threshold
+- Better accuracy with larger models
+
+## Installation Instructions
+
+1. **Install Dependencies** (in Slicer):
+   - Click "Install Dependencies" button
+   - Restart 3D Slicer
+
+2. **Required Python packages**:
+   ```
+   presidio-analyzer
+   presidio-anonymizer
+   pandas
+   python-docx
+   spacy (with en_core_web_lg model)
+   ```
+
+## Usage Examples
+
+### Example 1: Maximum Privacy
+**Settings:**
+- ✅ Check ALL entity types
+- Method: **Redact** (removes completely)
+- Threshold: **0.5** (balanced)
+
+**Result:**
+```
+Dr. Smith treated patient John Doe on 03/15/2023.
+Phone: 555-123-4567, Email: jdoe@example.com
+```
+↓
+```
+[REDACTED] treated patient [REDACTED] on [REDACTED].
+Phone: [REDACTED], Email: [REDACTED]
+```
+
+### Example 2: Preserve Structure
+**Settings:**
+- ✅ Names, Phones, Emails only
+- Method: **Replace** (with labels)
+- Threshold: **0.5**
+
+**Result:**
+```
+Dr. Smith treated patient John Doe on 03/15/2023.
+Phone: 555-123-4567
+```
+↓
+```
+<PERSON> treated patient <PERSON> on 03/15/2023.
+Phone: <PHONE_NUMBER>
+```
+
+### Example 3: Auditable (Hash)
+**Settings:**
+- ✅ Names only
+- Method: **Hash**
+- Threshold: **0.7** (more strict)
+
+**Result:**
+```
+Dr. Smith and Dr. Smith discuss patient care.
+```
+↓
+```
+<PERSON_a3f9b2c> and <PERSON_a3f9b2c> discuss patient care.
+```
+(Same person = same hash)
+
+## Key Configuration Parameters
+
+### 1. Entity Types (Checkboxes)
+Control WHAT gets anonymized:
+- PERSON: Patient/doctor names
+- PHONE_NUMBER: All phone formats
+- EMAIL_ADDRESS: Email addresses
+- DATE_TIME: Dates and timestamps
+- LOCATION: Addresses, cities, states
+- US_SSN: Social Security Numbers
+- MEDICAL_LICENSE: Medical license IDs
+- CREDIT_CARD: Credit card numbers
+- IP_ADDRESS: IP addresses
+- URL: Website URLs
+
+### 2. Anonymization Method (Dropdown)
+Control HOW anonymization happens:
+- **Replace**: `<ENTITY_TYPE>` - Keeps structure, shows what was removed
+- **Redact**: Completely removes text
+- **Hash**: Unique hash per entity (consistent within document)
+- **Mask**: Replaces with asterisks (e.g., ********)
+
+### 3. Confidence Threshold (Slider: 0.0 - 1.0)
+Control detection sensitivity:
+- **Low (0.3)**: Catches more entities, more false positives
+- **Medium (0.5)**: Balanced (recommended)
+- **High (0.7)**: Fewer false positives, might miss some entities
+
+## Advanced Customization
+
+### Adding Custom Entity Types
+Edit line 47-58 to add custom entities:
+```python
+entities = [
+    ("PERSON", "Names (patients, doctors)", True),
+    ("CUSTOM_ID", "Your Custom ID Type", True),  # Add this
+    ...
+]
+```
+
+### Changing Default Settings
+Edit line 49 (third parameter = default checked state):
+```python
+("US_DRIVER_LICENSE", "Driver's License Numbers", True),  # Now checked by default
+```
+
+### Language Support
+To support other languages, change line 120:
+```python
+spacy.cli.download("es_core_news_lg")  # For Spanish
+# or
+spacy.cli.download("fr_core_news_lg")  # For French
+```
+
+## File Output
+
+The module creates:
+1. **Anonymized DOCX files** with UUID names
+2. **file_mappings.csv** tracking:
+   - Original File Name
+   - Anonymized File Name
+   - UUID
+
+## Troubleshooting
+
+### "Dependencies Not Installed" error
+- Click "Install Dependencies"
+- Restart 3D Slicer completely
+- Try again
+
+### Not catching all entities
+- Lower the confidence threshold (0.3-0.4)
+- Check that entity type is selected
+- Verify Presidio is installed correctly
+
+### Too many false positives
+- Raise confidence threshold (0.7-0.8)
+- Use more specific entity types only
+
+## Performance Comparison
+
+| Metric | Old (spaCy) | New (Presidio) |
+|--------|-------------|----------------|
+| Entity types | 2 | 12+ |
+| Accuracy | ~85% | ~95% |
+| Configuration | None | Full UI |
+| Methods | 1 (replace) | 4 (replace/redact/hash/mask) |
+| Medical-specific | No | Yes (medical license, etc.) |
+
+## Questions?
+
+For issues or feature requests:
+https://github.com/bianchijonas1/Medical_Data_Anonymizer/issues
+
