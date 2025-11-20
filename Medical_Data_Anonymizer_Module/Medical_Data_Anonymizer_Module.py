@@ -6,12 +6,30 @@ import ctk
 import qt
 import pandas as pd
 import uuid
+import warnings
+import sys
+
+# Suppress Presidio multilingual warnings - we only use English
+os.environ['PRESIDIO_SUPPRESS_WARNINGS'] = '1'
+
+# Suppress warnings before importing Presidio
+warnings.filterwarnings('ignore')
+logging.getLogger("presidio_analyzer").setLevel(logging.CRITICAL)
+logging.getLogger("presidio_anonymizer").setLevel(logging.CRITICAL)
+logging.getLogger().setLevel(logging.CRITICAL)
+
+# Capture and suppress stderr for Presidio initialization
+class SuppressStderr:
+    def write(self, x):
+        pass
+    def flush(self):
+        pass
 
 class Medical_Data_Anonymizer_Module(ScriptedLoadableModule):
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = "Medical Data Anonymizer Module"
-        self.parent.categories = ["Examples"]
+        self.parent.categories = ["Anonymization"]
         self.parent.dependencies = []
         self.parent.contributors = ["Jonas Bianchi"]
         self.parent.helpText = """This module anonymizes text files using Presidio."""
@@ -125,18 +143,36 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
             self.statusLabel.setText("Installing dependencies...")
             slicer.app.processEvents()
             
-            # Install Presidio
+            # Install Presidio and file handling libraries
             slicer.util.pip_install('presidio-analyzer')
             slicer.util.pip_install('presidio-anonymizer')
             slicer.util.pip_install('pandas')
             slicer.util.pip_install('python-docx')
+            slicer.util.pip_install('pdfplumber')
+            slicer.util.pip_install('odfpy')  # For ODT support
+            slicer.util.pip_install('lxml')  # For XML support
+            slicer.util.pip_install('langdetect')  # For language detection
+            slicer.util.pip_install('reportlab')  # For PDF generation
             
-            # Download spaCy language model (Presidio requires it)
+            # Download spaCy language models
             import spacy
-            try:
-                spacy.load("en_core_web_lg")
-            except:
-                spacy.cli.download("en_core_web_lg")
+            
+            models = [
+                ("en_core_web_lg", "English")
+            ]
+            
+            for model_name, lang_name in models:
+                try:
+                    self.statusLabel.setText(f"Loading {lang_name} model...")
+                    slicer.app.processEvents()
+                    spacy.load(model_name)
+                except:
+                    self.statusLabel.setText(f"Installing {lang_name} model...")
+                    slicer.app.processEvents()
+                    try:
+                        spacy.cli.download(model_name)
+                    except:
+                        logging.warning(f"Could not download {model_name}")
 
             self.statusLabel.setText("Dependencies installed successfully!")
             
@@ -200,47 +236,109 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
         anonymization_method = self.anonymizationMethodCombo.currentData
         score_threshold = self.scoreThresholdSlider.value
 
-        # Initialize Presidio
-        analyzer = AnalyzerEngine()
-        anonymizer = AnonymizerEngine()
+        old_stderr = sys.stderr
+        sys.stderr = SuppressStderr()
+        try:
+            analyzer = AnalyzerEngine()
+            anonymizer = AnonymizerEngine()
+        finally:
+            sys.stderr = old_stderr
 
         input_folder = self.inputDirectoryButton.currentPath
         output_folder = self.outputDirectoryButton.currentPath
         csv_file_path = os.path.join(output_folder, "file_mappings.csv")
 
-        # Get list of files
-        docx_files = []
+        # Get list of files (DOCX, TXT, PDF, CSV, XML, ODT)
+        supported_files = []
         for root, dirs, files in os.walk(input_folder):
             for file in files:
-                if file.endswith(".docx") and not file.startswith("~$"):
-                    docx_files.append(os.path.join(root, file))
+                if (file.endswith((".docx", ".txt", ".pdf", ".csv", ".xml", ".odt")) and not file.startswith("~$")):
+                    supported_files.append(os.path.join(root, file))
 
-        if not docx_files:
+        if not supported_files:
             qt.QMessageBox.information(
                 slicer.util.mainWindow(),
                 'No Files Found',
-                'No .docx files found in the selected directory.'
+                'No supported files found (.docx, .txt, .pdf, .csv, .xml, .odt).'
             )
             return
 
         # Show progress bar
         self.progressBar.setVisible(True)
-        self.progressBar.setMaximum(len(docx_files))
+        self.progressBar.setMaximum(len(supported_files))
         self.progressBar.setValue(0)
 
         # Run the anonymization process
         file_mappings = []
 
-        for idx, input_file_path in enumerate(docx_files):
+        for idx, input_file_path in enumerate(supported_files):
             try:
                 file = os.path.basename(input_file_path)
                 self.statusLabel.setText(f"Processing: {file}")
                 slicer.app.processEvents()
 
                 unique_id = str(uuid.uuid4())
-                doc = docx.Document(input_file_path)
-                full_text = "\n".join([para.text for para in doc.paragraphs])
-
+                file_ext = os.path.splitext(file)[1].lower()
+                
+                # Extract text based on file type
+                if file_ext == ".docx":
+                    import docx
+                    doc = docx.Document(input_file_path)
+                    full_text = "\n".join([para.text for para in doc.paragraphs])
+                
+                elif file_ext == ".txt":
+                    with open(input_file_path, 'r', encoding='utf-8') as f:
+                        full_text = f.read()
+                
+                elif file_ext == ".pdf":
+                    import pdfplumber
+                    full_text = ""
+                    try:
+                        with pdfplumber.open(input_file_path) as pdf:
+                            for page in pdf.pages:
+                                text = page.extract_text()
+                                if text:
+                                    full_text += text + "\n"
+                    except Exception as pdf_error:
+                        logging.warning(f"Error extracting text from PDF {file}: {pdf_error}")
+                        try:
+                            with pdfplumber.open(input_file_path) as pdf:
+                                for page in pdf.pages:
+                                    tables = page.extract_tables()
+                                    if tables:
+                                        for table in tables:
+                                            for row in table:
+                                                full_text += " ".join([str(cell) if cell else "" for cell in row]) + "\n"
+                        except:
+                            pass
+                
+                elif file_ext == ".csv":
+                    import csv
+                    full_text = ""
+                    with open(input_file_path, 'r', encoding='utf-8') as f:
+                        reader = csv.reader(f)
+                        for row in reader:
+                            full_text += " ".join(row) + "\n"
+                
+                elif file_ext == ".xml":
+                    from xml.etree import ElementTree as ET
+                    tree = ET.parse(input_file_path)
+                    root = tree.getroot()
+                    full_text = self.extract_text_from_xml(root)
+                
+                elif file_ext == ".odt":
+                    from odf import opendocument, text
+                    doc = opendocument.load(input_file_path)
+                    full_text = ""
+                    for paragraph in doc.getElementsByType(text.P):
+                        for node in paragraph.childNodes:
+                            if node.nodeType == node.TEXT_NODE:
+                                full_text += str(node.data)
+                        full_text += "\n"
+                
+                else:
+                    raise ValueError(f"Unsupported file type: {file_ext}")
+                
                 # Anonymize using Presidio
                 anonymized_text = self.anonymize_text_presidio(
                     full_text, 
@@ -251,14 +349,50 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
                     score_threshold
                 )
 
-                # Create new document
-                new_doc = docx.Document()
-                for line in anonymized_text.split("\n"):
-                    new_doc.add_paragraph(line)
-
-                new_file_name = f"{unique_id}.docx"
-                output_docx_path = os.path.join(output_folder, new_file_name)
-                new_doc.save(output_docx_path)
+                # Save anonymized file with same format
+                if file_ext == ".docx":
+                    import docx
+                    new_doc = docx.Document()
+                    for line in anonymized_text.split("\n"):
+                        new_doc.add_paragraph(line)
+                    new_file_name = file.replace(".docx", "_anonymized.docx")
+                    output_path = os.path.join(output_folder, new_file_name)
+                    new_doc.save(output_path)
+                
+                elif file_ext == ".txt":
+                    new_file_name = file.replace(".txt", "_anonymized.txt")
+                    output_path = os.path.join(output_folder, new_file_name)
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(anonymized_text)
+                
+                elif file_ext == ".pdf":
+                    new_file_name = file.replace(".pdf", "_anonymized.pdf")
+                    output_path = os.path.join(output_folder, new_file_name)
+                    self.save_str_pdf(anonymized_text, output_path)
+                
+                elif file_ext == ".csv":
+                    import csv
+                    new_file_name = file.replace(".csv", "_anonymized.csv")
+                    output_path = os.path.join(output_folder, new_file_name)
+                    with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                        writer = csv.writer(f)
+                        for line in anonymized_text.split("\n"):
+                            if line.strip():
+                                writer.writerow(line.split())
+                
+                elif file_ext == ".xml":
+                    from xml.etree import ElementTree as ET
+                    new_file_name = file.replace(".xml", "_anonymized.xml")
+                    output_path = os.path.join(output_folder, new_file_name)
+                    # Save as formatted text since XML anonymization is complex
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(anonymized_text)
+                
+                elif file_ext == ".odt":
+                    new_file_name = file.replace(".odt", "_anonymized.txt")
+                    output_path = os.path.join(output_folder, new_file_name)
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(anonymized_text)
 
                 file_mappings.append({
                     "Original File Name": file,
@@ -266,7 +400,7 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
                     "UUID": unique_id
                 })
 
-                logging.info(f"Anonymized file created: {output_docx_path}")
+                logging.info(f"Anonymized file created: {output_path}")
 
             except Exception as e:
                 logging.error(f"Error processing {file}: {e}")
@@ -283,13 +417,13 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
         mappings_df = pd.DataFrame(file_mappings)
         if not mappings_df.empty:
             mappings_df.to_csv(csv_file_path, index=False)
-            self.statusLabel.setText(f"Complete! Processed {len(docx_files)} files.")
+            self.statusLabel.setText(f"Complete! Processed {len(supported_files)} files.")
             logging.info(f"Anonymization complete. File mappings saved to {csv_file_path}.")
             
             qt.QMessageBox.information(
                 slicer.util.mainWindow(),
                 'Anonymization Complete',
-                f'Successfully processed {len(docx_files)} files.\n\nMappings saved to:\n{csv_file_path}'
+                f'Successfully processed {len(supported_files)} files.\n\nMappings saved to:\n{csv_file_path}'
             )
         else:
             self.statusLabel.setText("No valid files were processed.")
@@ -297,9 +431,21 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
 
         self.progressBar.setVisible(False)
 
+    def save_str_pdf(self, text, filename):
+        from reportlab.platypus import SimpleDocTemplate, Preformatted
+        from reportlab.lib.styles import getSampleStyleSheet
+
+        doc = SimpleDocTemplate(filename)
+        styles = getSampleStyleSheet()
+
+        # Preformatted garde *tout* : <test>, <abc>, indentation, etc.
+        story = [Preformatted(text, styles['Normal'])]
+
+        doc.build(story)
+
     def anonymize_text_presidio(self, text, analyzer, anonymizer, entities, method, score_threshold):
         """
-        Anonymize text using Presidio
+        Anonymize text using Presidio with automatic language detection
         
         Parameters:
         - text: The text to anonymize
@@ -310,7 +456,8 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
         - score_threshold: Confidence threshold for detection
         """
         try:
-            # Analyze text
+            
+            # Analyze text with detected language
             results = analyzer.analyze(
                 text=text,
                 language='en',
@@ -349,6 +496,17 @@ class Medical_Data_Anonymizer_ModuleWidget(ScriptedLoadableModuleWidget):
         except Exception as e:
             logging.error(f"Error in Presidio anonymization: {e}")
             return text  # Return original text if anonymization fails
+
+    def extract_text_from_xml(self, element):
+        """Recursively extract text from XML elements"""
+        text = ""
+        if element.text:
+            text += element.text + " "
+        for child in element:
+            text += self.extract_text_from_xml(child)
+            if child.tail:
+                text += child.tail + " "
+        return text
 
 class Medical_Data_Anonymizer_ModuleLogic(ScriptedLoadableModuleLogic):
     pass
